@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#a92342" />
+  <title>愛学祭｜デジタルパンフレット</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;color:#28232b;background:#fff7f5}
+    *{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}
+    header{background:linear-gradient(120deg,#991d3b,#e44c67);color:white;padding:17px max(18px,calc((100vw - 1100px)/2));display:flex;justify-content:space-between;align-items:center;gap:12px}
+    header h1{font-size:clamp(17px,3vw,24px);margin:0}header p{margin:4px 0 0;font-size:12px;opacity:.9}
+    .download,.upload{border:1px solid #fff9;border-radius:99px;padding:10px 15px;color:white;background:#ffffff22;font-weight:700;white-space:nowrap;text-decoration:none}
+    .upload{display:inline-flex;align-items:center;cursor:pointer}.upload input{display:none}
+    .head-actions{display:flex;gap:8px;flex-wrap:wrap}
+    main{max-width:1100px;margin:auto;padding:16px 12px 32px}
+    .notice{font-size:13px;color:#785761;margin:0 0 12px;text-align:center}
+    .toolbar{position:sticky;top:0;z-index:20;background:#fffdfcf2;backdrop-filter:blur(10px);border:1px solid #ecd5d9;border-radius:16px;padding:9px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;box-shadow:0 5px 18px #63213b15}
+    .toolbar button{background:white;border:1px solid #e9cdd3;color:#62283c;border-radius:12px;min-width:43px;min-height:43px;padding:7px 12px;font-weight:700}
+    .toolbar button:hover{background:#fff0f2}.toolbar button:disabled{opacity:.3;cursor:not-allowed}
+    .toolbar input[type=number]{width:58px;text-align:center;padding:9px 3px;border:1px solid #d8b6c0;border-radius:10px}
+    .page-count,.zoom-label{font-size:14px;white-space:nowrap}.separator{width:1px;height:30px;background:#e8d8dc;margin:0 3px}
+    .viewer{margin:14px auto 0;min-height:480px;max-height:calc(100dvh - 245px);overflow:auto;overscroll-behavior:contain;background:#f1e8e9;border:1px solid #eadbdf;border-radius:19px;padding:18px;display:flex;align-items:flex-start;justify-content:safe center;touch-action:pan-x pan-y}
+    canvas{display:block;background:white;box-shadow:0 9px 28px #41263630;max-width:none;flex:none}
+    .status{text-align:center;color:#73535f;padding:18px;min-height:40px}
+    .bottom{display:flex;justify-content:center;gap:10px;margin:8px auto 0}
+    .bottom button{border:0;background:#a92342;color:white;border-radius:13px;padding:13px 24px;font-weight:700}
+    .bottom button:disabled{background:#ddc5cd}
+    footer{text-align:center;color:#8b6e75;font-size:12px;padding:10px}
+    @media(max-width:600px){header{padding:15px 14px;align-items:flex-start}header p{font-size:11px}.download,.upload{padding:9px 10px;font-size:12px}.head-actions{justify-content:flex-end}main{padding:11px 8px}.toolbar{gap:5px;padding:7px 4px}.toolbar button{min-width:38px;min-height:42px;padding:6px 9px}.separator{margin:0 1px}.viewer{padding:10px;max-height:calc(100dvh - 240px);min-height:360px}.notice{font-size:12px}}
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>🐸 愛学祭 デジタルパンフレット</h1><p>好きなページを、いつでも、どこでも。</p></div>
+    <div class="head-actions">
+      <label class="upload">PDFを開く<input id="fileInput" type="file" accept="application/pdf,.pdf"></label>
+      <button class="download" id="download">⬇ PDF保存</button>
+    </div>
+  </header>
+  <main>
+    <p class="notice" id="guide">左右にスワイプしてページ送り／ピンチ操作で拡大・縮小できます</p>
+    <nav class="toolbar" aria-label="パンフレット操作">
+      <button id="prev" aria-label="前のページ">❮</button>
+      <input id="pageInput" type="number" min="1" value="1" aria-label="ページ番号">
+      <span class="page-count">/ <span id="total">--</span> ページ</span>
+      <button id="next" aria-label="次のページ">❯</button>
+      <span class="separator"></span>
+      <button id="minus" aria-label="縮小">−</button>
+      <span class="zoom-label" id="zoomLabel">100%</span>
+      <button id="plus" aria-label="拡大">＋</button>
+      <button id="fit">幅に合わせる</button>
+    </nav>
+    <section class="viewer" id="viewer" aria-label="PDFビューアー">
+      <canvas id="pdfCanvas" aria-label="現在のページ"></canvas>
+    </section>
+    <div class="status" id="status" role="status">パンフレットを準備しています…</div>
+    <div class="bottom"><button id="prevBottom">← 前へ</button><button id="nextBottom">次へ →</button></div>
+  </main>
+  <footer>愛学祭 DIGITAL GUIDE</footer>
+
+  <!-- PDF.js: PDF表示用 / pdf-lib: 見本PDFの自動生成用 -->
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script type="module">
+    import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
+
+    // ★差し替えるPDFは GitHub に「pamphlet.pdf」という名前でアップロードするだけ！
+    // PDFがまだない場合は、下の処理で4ページの見本が自動表示されます。
+    const PDF_PATH = './pamphlet.pdf';
+    const $ = id => document.getElementById(id);
+    const viewer = $('viewer'), canvas = $('pdfCanvas');
+    let pdf = null, pdfBytes = null, currentPage = 1, zoom = 1, renderVersion = 0;
+    let downloadName = 'aigakusai-sample.pdf';
+    const clamp = (x,min,max) => Math.min(max,Math.max(min,x));
+
+    async function makeSamplePDF(){
+      const doc = await PDFLib.PDFDocument.create();
+      const W = 900, H = 1272;
+      const pages = [
+        {title:'愛学祭',sub:'DIGITAL PAMPHLET',tag:'WELCOME!',lines:['第73回 愛学祭','デジタルパンフレット 見本','2026.10.30 FRI - 10.31 SAT']},
+        {title:'CONTENTS',sub:'もくじ',tag:'01',lines:['01  表紙','02  もくじ','03  イベント情報','04  アクセス・ご案内']},
+        {title:'EVENT',sub:'イベント情報',tag:'02',lines:['ステージ企画','模擬店・展示','ハロウィン企画','※ こちらは表示確認用のサンプルです']},
+        {title:'INFORMATION',sub:'会場案内',tag:'03',lines:['愛知学院大学 日進キャンパス','イベント詳細・マップ等は','完成版パンフレットでご確認ください','ご来場をお待ちしています！']}
+      ];
+      for (let i=0;i<pages.length;i++) {
+        const art = document.createElement('canvas'); art.width=W; art.height=H;
+        const c=art.getContext('2d'); const p=pages[i];
+        c.fillStyle=i===0?'#ad2349':'#fffaf7';c.fillRect(0,0,W,H);
+        c.fillStyle=i===0?'#f8d9d7':'#f4e1e5';
+        c.beginPath();c.arc(790,140,270,0,Math.PI*2);c.fill();
+        c.beginPath();c.arc(50,1100,215,0,Math.PI*2);c.fill();
+        c.fillStyle=i===0?'#fff':'#a92342';
+        c.font='bold 42px sans-serif';c.fillText('AGU FESTIVAL',75,120);
+        c.font='bold 112px sans-serif';c.fillText(p.title,70,330);
+        c.font='bold 48px sans-serif';c.fillText(p.sub,76,410);
+        c.fillStyle=i===0?'#fff1f2':'#b84262';c.font='bold 29px sans-serif';c.fillText(p.tag,76,500);
+        c.fillStyle=i===0?'#fff':'#503840';c.font='34px sans-serif';
+        p.lines.forEach((line,j)=>c.fillText(line,76,645+j*98));
+        c.fillStyle=i===0?'#ffe2e2':'#a92342';c.font='bold 30px sans-serif';
+        c.fillText('🐸  愛学祭  DIGITAL GUIDE',76,1160);
+        c.font='24px sans-serif';c.fillText(`${i+1} / ${pages.length}`,760,1210);
+        const png=await doc.embedPng(art.toDataURL('image/png'));
+        const page=doc.addPage([450,636]);page.drawImage(png,{x:0,y:0,width:450,height:636});
+      }
+      return new Uint8Array(await doc.save());
+    }
+
+    async function loadBytes(bytes, name, sample=false){
+      pdfBytes=new Uint8Array(bytes);
+      downloadName=name;
+      pdf=await pdfjsLib.getDocument({data:new Uint8Array(pdfBytes)}).promise;
+      currentPage=1;zoom=1;
+      $('total').textContent=pdf.numPages;
+      $('pageInput').max=pdf.numPages;
+      $('guide').textContent=sample
+        ? 'これは見本です。GitHubに pamphlet.pdf を追加すると本物のPDFに切り替わります。'
+        : '左右スワイプでページ送り／ピンチ操作で拡大・縮小できます';
+      updateButtons();await renderPage();
+    }
+    function updateButtons(){
+      if(!pdf)return;
+      $('pageInput').value=currentPage;
+      $('zoomLabel').textContent=Math.round(zoom*100)+'%';
+      for(const id of ['prev','prevBottom']) $(id).disabled=currentPage===1;
+      for(const id of ['next','nextBottom']) $(id).disabled=currentPage===pdf.numPages;
+    }
+    async function renderPage(){
+      if(!pdf)return;
+      const version=++renderVersion;
+      $('status').textContent='ページを読み込み中…';
+      try{
+        const page=await pdf.getPage(currentPage);
+        if(version!==renderVersion)return;
+        const base=page.getViewport({scale:1});
+        const fitWidth=Math.max(100,viewer.clientWidth-34);
+        const displayScale=fitWidth/base.width*zoom;
+        const view=page.getViewport({scale:displayScale});
+        const pixelRatio=Math.min(window.devicePixelRatio||1,1.6);
+        const context=canvas.getContext('2d');
+        canvas.width=Math.ceil(view.width*pixelRatio);
+        canvas.height=Math.ceil(view.height*pixelRatio);
+        canvas.style.width=Math.ceil(view.width)+'px';
+        canvas.style.height=Math.ceil(view.height)+'px';
+        const task=page.render({canvasContext:context,viewport:view,transform:[pixelRatio,0,0,pixelRatio,0,0]});
+        await task.promise;
+        if(version!==renderVersion)return;
+        $('status').textContent=`${currentPage} / ${pdf.numPages} ページ`;
+      }catch(e){if(version===renderVersion){$('status').textContent='表示エラー: '+e.message;console.error(e)}}
+    }
+    function goTo(page){if(!pdf)return;currentPage=clamp(Number(page)||1,1,pdf.numPages);updateButtons();viewer.scrollTop=0;viewer.scrollLeft=0;renderPage()}
+    function setZoom(value){zoom=clamp(value,.6,2.5);updateButtons();renderPage()}
+    $('prev').onclick=$('prevBottom').onclick=()=>goTo(currentPage-1);
+    $('next').onclick=$('nextBottom').onclick=()=>goTo(currentPage+1);
+    $('pageInput').onchange=e=>goTo(e.target.value);
+    $('minus').onclick=()=>setZoom(zoom-.2);
+    $('plus').onclick=()=>setZoom(zoom+.2);
+    $('fit').onclick=()=>setZoom(1);
+    $('download').onclick=()=>{
+      if(!pdfBytes)return;
+      const blob=new Blob([pdfBytes],{type:'application/pdf'});
+      const url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download=downloadName;document.body.append(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+    };
+    $('fileInput').onchange=async e=>{
+      const file=e.target.files?.[0];if(!file)return;
+      try{await loadBytes(new Uint8Array(await file.arrayBuffer()),file.name)}
+      catch(err){$('status').textContent='PDFを開けませんでした: '+err.message}
+    };
+    document.addEventListener('keydown',e=>{
+      if(e.target.tagName==='INPUT')return;
+      if(e.key==='ArrowRight')goTo(currentPage+1);
+      if(e.key==='ArrowLeft')goTo(currentPage-1);
+    });
+    let startX=0,startY=0,pinchStart=0,pinchZoom=1;
+    const distance=t=>Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
+    viewer.addEventListener('touchstart',e=>{
+      if(e.touches.length===2){pinchStart=distance(e.touches);pinchZoom=zoom}
+      else if(e.touches.length===1){startX=e.touches[0].clientX;startY=e.touches[0].clientY;pinchStart=0}
+    },{passive:true});
+    viewer.addEventListener('touchmove',e=>{
+      if(e.touches.length===2&&pinchStart){
+        e.preventDefault();
+        const newZoom=clamp(pinchZoom*distance(e.touches)/pinchStart,.6,2.5);
+        // 操作中の重い再描画を避け、指を離した時に高精細で描き直す
+        canvas.style.transform=`scale(${newZoom/zoom})`;
+        canvas.style.transformOrigin='top center';
+        viewer.dataset.pendingZoom=String(newZoom);
+      }
+    },{passive:false});
+    viewer.addEventListener('touchend',e=>{
+      if(viewer.dataset.pendingZoom){const z=Number(viewer.dataset.pendingZoom);delete viewer.dataset.pendingZoom;canvas.style.transform='';setZoom(z);pinchStart=0;return}
+      if(e.touches.length>0||!e.changedTouches.length||pinchStart)return;
+      const dx=e.changedTouches[0].clientX-startX,dy=e.changedTouches[0].clientY-startY;
+      if(Math.abs(dx)>65&&Math.abs(dx)>Math.abs(dy)*1.4&&zoom<=1.05)goTo(currentPage+(dx<0?1:-1));
+    },{passive:true});
+    let resizeTimer;
+    window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(renderPage,180)});
+
+    (async()=>{
+      try{
+        const response=await fetch(PDF_PATH);
+        if(response.ok && (response.headers.get('content-type')||'').includes('pdf')){
+          await loadBytes(new Uint8Array(await response.arrayBuffer()),'pamphlet.pdf');return;
+        }
+      }catch(_){/* PDF未設置なら見本を使う */}
+      try{await loadBytes(await makeSamplePDF(),'aigakusai-sample.pdf',true)}
+      catch(e){$('status').textContent='見本の読み込みに失敗しました。ページを再読み込みしてください。';console.error(e)}
+    })();
+  </script>
+</body>
+</html>
